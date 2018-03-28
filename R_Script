@@ -1,0 +1,192 @@
+
+#########################Include necessary libraries#####################
+library(tidyr)
+library(stringr)
+library(lubridate)
+library(ggplot2)
+
+##############read Uber.csv file ##################
+
+uber <- read.csv("Uber Request Data.csv",stringsAsFactors = F)
+
+############Display header################
+sample_uber <- sample(uber)
+head_uber <- head(uber)
+
+###############Data Cleaning and Preparation####################################################
+## check the sample data using head command  ##########
+
+for(i in 1:length(uber$Request.timestamp)){date_time[i] <- as.data.frame(strsplit(uber$Request.timestamp[i], " "))}
+head(date_time)
+head(uber$Request.timestamp)
+
+##################function for formating date####################
+
+dateformating <- function(dt){
+  
+  if(!is.na(strptime(dt, "%d/%m/%Y %H:%M"))){
+  
+    fdt <- strptime(dt, "%d/%m/%Y %H:%M")
+   
+    return(fdt)
+    
+   }else if(!is.na(strptime(dt, "%d-%m-%Y %H:%M:%S"))){
+     
+     fdt <- strptime(dt, "%d-%m-%Y %H:%M:%S")
+     
+     return(fdt)
+  
+  }else{
+    
+    fdt <- NA
+    return(fdt)
+   }
+  
+}
+
+
+#####################format request time#############################
+##  Use dateformatting function for formatting date ###############
+
+request_date <- ymd_hms(dateformating(uber$Request.timestamp[1]))
+
+for(i in 1 : length(uber$Request.timestamp)){
+  
+  request_date[i] <- ymd_hms(dateformating(uber$Request.timestamp[i]))
+  
+  if(is.na(request_date[i]) & !is.na(dateformating(uber$Request.timestamp[i]))){
+    x <- as.Date(dateformating(uber$Request.timestamp[i]))
+    y <- strftime(dateformating(uber$Request.timestamp[i]), format = "%H:%M:%S")             
+    request_date[i] <- paste (x,y, sep=" ")
+ }
+}
+
+## add the request_date column to uber table
+uber$request_date <- request_date
+
+
+###################format drop time   ###################################
+
+drop_date <- ymd_hms(dateformating(uber$Drop.timestamp[1]))
+
+for(i in 1 : length(uber$Drop.timestamp)){
+  
+  drop_date[i] <- ymd_hms(dateformating(uber$Drop.timestamp[i]))
+  if(is.na(request_date[i]) & !is.na(dateformating(uber$Request.timestamp[i]))){
+    x <- as.Date(dateformating(uber$Request.timestamp[i]))
+    y <- strftime(dateformating(uber$Request.timestamp[i]), format = "%H:%M:%S")             
+    request_date[i] <- paste (x,y, sep=" ")
+  }
+  
+  ## y[i] <- strftime(dateformating(uber$Request.timestamp[i]), format = "%H:%M:%S")
+}
+
+## add the drop_date column to uber table
+
+uber <- data.frame(uber,drop_date)
+
+#########convert status in to factors
+
+uber$Status <- as.factor(uber$Status)
+str(uber$Status)
+
+############## add column part of the day in uber table #############
+## 1. If request time lass than 6 AM it is early morning.
+## 2. If request time is grater than 6 AM and less than 11 AM it is morning
+## 3. If request time is grater than 11 AM and less than 4.00 PM it is afternoon
+## 4. If request time is grater than 4.00 PM and less than 8.00 PM it is evening
+## 5. If the request time is grater than 8.00 PM it is night.
+
+part_day <- "early_monrning"
+
+for(i in 1:length(uber$request_date)){
+  if(hour(uber$request_date[i])<6)
+  {
+    part_day[i] <- "early_monrning"
+    
+  }else if(hour(uber$request_date[i])<11){
+    
+    part_day[i] <- "monrning"
+    
+  }else if(hour(uber$request_date[i])<16)
+  {
+    part_day[i] <- "afternoon"
+    
+  }else if(hour(uber$request_date[i])<20){
+    
+    part_day[i] <- "evening"
+    
+  }else{
+    
+    part_day[i] <- "night"
+    
+  }
+}
+
+uber$part_day <- part_day
+
+############## add column weekday or a weekend  ###################
+
+type_of_day <- "weekday"
+
+for(i in 1:length(uber$request_date)){
+  if(wday(uber$request_date[i])<6)
+  {
+    type_of_day[i] <- "weekday"
+    
+  }else{
+    
+    type_of_day[i] <- "weekend"
+    
+  }
+}
+
+uber <- data.frame(uber,type_of_day)
+
+############first query##########################
+# 
+# create plots to visualise the frequency of requests that get cancelled or
+# show 'no cars available'; identify the most problematic types of
+# requests (city to airport / airport to city etc.) and the 
+# time slots (early mornings, late evenings etc.) using plots
+############################################
+
+uber_not_comp <- subset(uber, uber$Status=="Cancelled" | uber$Status == "No Cars Available")
+
+#################plot based on part of the day, incomplete request and pickup point  ##################
+
+ggplot(data=uber_not_comp, aes(x=uber_not_comp$Pickup.point,y=uber_not_comp$part_day,col=factor(uber_not_comp$Status)) ) +
+  geom_jitter(alpha=0.4) +
+  guides(fill=FALSE) +
+  xlab("point of request")  + ylab("point of day") +
+  ggtitle("Requests scatter plot")
+
+
+##################plot based on time of the day, incomplete request and pickup point  ##################
+ggplot(data=uber_not_comp, aes(x=uber_not_comp$Pickup.point,y=hour(uber_not_comp$request_date),col=factor(uber_not_comp$Status)) ) +
+  geom_jitter(alpha=0.4) +
+  guides(fill=FALSE) +
+  xlab("point of request")  + ylab("point of day") +
+  ggtitle("Requests scatter plot")
+
+##################plot on a weekday incomplete request and pickup point  ##################
+uber_cancel_weekday <- subset(uber, ((uber$Status=="Cancelled" | uber$Status == "No Cars Available")&
+                                       (uber$type_of_day=="weekday")))
+
+ggplot(data=uber_cancel_weekday, aes(x=uber_cancel_weekday$Pickup.point,y=hour(uber_cancel_weekday$request_date),col=factor(uber_cancel_weekday$Status)) ) +
+  geom_jitter(alpha=0.4) +
+  guides(fill=FALSE) +
+  xlab("point of request")  + ylab("point of day") +
+  ggtitle("Requests scatter plot")
+
+#####################plot on a weekend incomplete request and pickup point  ##################
+uber_cancel_weekend <- subset(uber, ((uber$Status=="Cancelled" | uber$Status == "No Cars Available")&
+                                       (uber$type_of_day=="weekend")))
+
+ggplot(data=uber_cancel_weekend, aes(x=uber_cancel_weekend$Pickup.point,y=hour(uber_cancel_weekend$request_date),col=factor(uber_cancel_weekend$Status)) ) +
+  geom_jitter(alpha=0.4) +
+  guides(fill=FALSE) +
+  xlab("point of request")  + ylab("point of day") +
+  ggtitle("Requests scatter plot")
+
+##########write.csv(uber, file = "Uber.csv")
